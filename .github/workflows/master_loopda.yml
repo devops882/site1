@@ -1,7 +1,7 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 
-name: Build and deploy container app to Azure Web App - loopda
+name: Build and deploy PHP app to Azure Web App - loopda
 
 on:
   push:
@@ -11,41 +11,50 @@ on:
 
 jobs:
   build:
-    runs-on: 'ubuntu-latest'
+    runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
 
-    - name: Log in to registry
-      uses: docker/login-action@v2
-      with:
-        registry: https://mcr.microsoft.com/
-        username: ${{ secrets.AzureAppService_ContainerUsername_a878eba3c7b64656a5138c95a0ac452d }}
-        password: ${{ secrets.AzureAppService_ContainerPassword_1bd7a3133c234eae8793f2902b549f04 }}
+      - name: Check if composer.json exists
+        id: check_files
+        uses: andstor/file-existence-action@v1
+        with:
+          files: 'composer.json'
 
-    - name: Build and push container image to registry
-      uses: docker/build-push-action@v3
-      with:
-        push: true
-        tags: mcr.microsoft.com/${{ secrets.AzureAppService_ContainerUsername_a878eba3c7b64656a5138c95a0ac452d }}/appsvc/staticsite:${{ github.sha }}
-        file: ./Dockerfile
+      - name: Run composer install if composer.json exists
+        if: steps.check_files.outputs.files_exists == 'true'
+        run: composer validate --no-check-publish && composer install --prefer-dist --no-progress
+
+      - name: Upload artifact for deployment job
+        uses: actions/upload-artifact@v2
+        with:
+          name: php-app
+          path: .
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
     environment:
-      name: 'production'
+      name: 'Production'
       url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
 
     steps:
-    - name: Deploy to Azure Web App
-      id: deploy-to-webapp
-      uses: azure/webapps-deploy@v2
-      with:
-        app-name: 'loopda'
-        slot-name: 'production'
-        publish-profile: ${{ secrets.AzureAppService_PublishProfile_66d7ad4d16cd4fd9827eb9454a49fddc }}
-        images: 'mcr.microsoft.com/${{ secrets.AzureAppService_ContainerUsername_a878eba3c7b64656a5138c95a0ac452d }}/appsvc/staticsite:${{ github.sha }}'
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v2
+        with:
+          name: php-app
+
+      - name: 'Deploy to Azure Web App'
+        uses: azure/webapps-deploy@v2
+        id: deploy-to-webapp
+        with:
+          app-name: 'loopda'
+          slot-name: 'Production'
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_DBD62BDB5EB34D63B2CF47C04754D341 }}
+          package: .
